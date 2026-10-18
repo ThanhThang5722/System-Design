@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MiniBoard — Mốc 1: Tách tầng Database
+# ─────────────────────────────────────────────────────────────────────────────
+# [CONCEPT] "Tầng" (tier/layer) nghĩa là một nhóm component chạy riêng biệt
+#           về mặt vật lý, có thể scale độc lập. Ở đây ta tách "web tier"
+#           (Node process) ra khỏi "data tier" (Postgres container).
+#
+# [WHY] Tại sao dùng Docker thay vì cài Postgres thẳng lên máy?
+#       → Môi trường nhất quán: mọi người trong team chạy cùng version
+#       → Xoá sạch không để rác: `docker compose down -v` là hết
+#       → Giống production hơn: production cũng dùng container
+
+services:
+
+  # ── Tầng Database ──────────────────────────────────────────────────────────
+  db:
+    image: postgres:17-alpine
+    # [CONCEPT] "alpine" = bản Linux tối giản, image nhỏ hơn ~50%, ít lỗ hổng bảo mật hơn.
+    #           Trong production, nhỏ = surface attack nhỏ = tốt hơn.
+
+    environment:
+      POSTGRES_DB: miniboard
+      POSTGRES_USER: miniboard
+      POSTGRES_PASSWORD: miniboard_secret
+    # [WHY] Hardcode credential ở đây được vì đây là local dev.
+    #       Production sẽ dùng Docker Secrets hoặc env file không commit lên git.
+
+    ports:
+      - "5432:5432"
+    # [CONCEPT] Cú pháp "HOST:CONTAINER". Mở cổng 5432 của máy host ánh xạ vào
+    #           cổng 5432 trong container. Cho phép ta kết nối bằng tools như
+    #           TablePlus, DBeaver, psql từ terminal.
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # [CONCEPT] ĐÂY LÀ BÀI HỌC CỐT LÕI CỦA MỐC NÀY.
+    #           Container theo thiết kế là EPHEMERAL (tạm thời) — mọi file bên trong
+    #           mất hết khi container bị xoá. Named volume (`postgres_data`) là một
+    #           vùng lưu trữ do Docker quản lý, NẰM NGOÀI vòng đời của container.
+    #           Container chết, volume vẫn sống. Đây chính xác là thứ ta cần cho data.
+    #
+    # [WHY] Tại sao KHÔNG dùng bind mount (./data:/var/lib/postgresql/data)?
+    #       → Named volume được tối ưu cho I/O của database hơn trên macOS
+    #       → Postgres cần quyền file system đặc biệt, named volume tự xử lý
+    #       → Dễ backup/migrate hơn: `docker volume inspect postgres_data`
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U miniboard -d miniboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # [CONCEPT] Healthcheck giúp Docker biết container "sẵn sàng nhận traffic" hay
+    #           chưa. Postgres cần vài giây khởi động trước khi chấp nhận connection.
+    #           Không có healthcheck, app có thể crash vì connect tới DB chưa ready.
+
+# ── Volumes (khai báo toàn cục) ──────────────────────────────────────────────
+volumes:
+  postgres_data:
+  # [CONCEPT] Khai báo tên volume ở đây để Docker biết đây là "named volume"
+  #           do nó quản lý, không phải đường dẫn tương đối trên máy host.

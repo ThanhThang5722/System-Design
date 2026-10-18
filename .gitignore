@@ -1,0 +1,13 @@
+# Dependencies
+**/node_modules/
+**/dist/
+
+# Môi trường
+**/.env
+**/.env.local
+
+# PDF lớn — không cần commit
+*.pdf
+
+# OS
+.DS_Store
